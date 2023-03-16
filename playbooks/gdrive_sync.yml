@@ -1,0 +1,100 @@
+---
+- name: Synchronize GDrive and configure periodic sync
+  hosts: localhost
+  connection: local
+
+  tasks:
+    - name: Gathering Facts
+      ansible.builtin.setup:
+
+    - name: Install apt packages
+      ansible.builtin.apt:
+        name: 
+          - rclone
+          - gettext-base
+      become: yes
+
+    - name: Get Documents path from ~/.config/user-dirs.dirs
+      ansible.builtin.command: "echo {{ lookup('ansible.builtin.ini', 'XDG_DOCUMENTS_DIR type=properties file=' + ansible_env.HOME + '/.config/user-dirs.dirs') }}"
+      register: documents_path
+
+    - name: Ensure Documents directory exists
+      ansible.builtin.file:
+        path: "{{ documents_path.stdout }}"
+        state: directory
+
+    - name: Ensure .dotfiles directory exists
+      ansible.builtin.file:
+        path: "{{ (ansible_env.HOME, '.dotfiles') | path_join }}"
+        state: directory
+
+    - name: Sync Documents
+      ansible.builtin.command: "rclone sync -v gdrive_documents: {{ documents_path.stdout }}"
+      register: result
+      changed_when: "'There was nothing to transfer' not in result.stderr"
+
+    - name: Sync .dotfiles
+      ansible.builtin.command: "rclone sync -v gdrive_dotfiles: {{ (ansible_env.HOME, '.dotfiles') | path_join }}"
+      register: result
+      changed_when: "'There was nothing to transfer' not in result.stderr"
+
+    - name: Update dotfiles
+      ansible.builtin.command: " {{ (ansible_env.HOME, '.dotfiles/dotfiles.sh') | path_join }}"
+
+    - name: Create rclone-sync systemd timer
+      ansible.builtin.copy:
+        content: |
+          [Unit]
+
+          [Timer]
+          OnBootSec=5m
+          OnUnitActiveSec=30m
+          Unit=rclone-sync.service
+        dest:
+          /etc/systemd/system/rclone-sync.timer
+        mode: '0444'
+        owner: root
+        group: root
+      become: yes
+
+    - name: Create rclone-sync systemd service
+      ansible.builtin.copy:
+        content: |
+          [Unit]
+
+          [Service]
+          ExecStart=/usr/local/bin/rclone-sync-start 
+          Type=oneshot
+          User={{ lookup('env', 'USER') }}
+        dest:
+          /etc/systemd/system/rclone-sync.service
+        mode: '0444'
+        owner: root
+        group: root
+      become: yes
+
+    - name: Create rclone-sync script
+      ansible.builtin.copy:
+        content: |
+          #!/bin/bash
+          set -eu
+          echo "Rclone syncing {{ documents_path.stdout }} to gdrive"
+          rclone sync -v {{ documents_path.stdout }} gdrive_documents:
+          echo "Rclone syncing .dotfiles to gdrive"
+          rclone sync -v $HOME/.dotfiles gdrive_dotfiles:
+        dest:
+          /usr/local/bin/rclone-sync-start 
+        mode: '0555'
+        owner: root
+        group: root
+      become: yes
+
+    - name: Activate systemd rclone-sync timer
+      systemd:
+        name: rclone-sync.timer
+        state: started
+        enabled: yes
+        daemon_reload: yes
+      become: yes
+
+        

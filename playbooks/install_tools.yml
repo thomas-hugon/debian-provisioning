@@ -1,0 +1,225 @@
+---
+- name: Install tools
+  hosts: localhost
+  connection: local
+
+  tasks:
+    - name: Gathering Facts
+      ansible.builtin.setup:
+
+    - name: Install apt packages
+      ansible.builtin.apt:
+        name: 
+          - bash-completion
+          - neovim
+          - gnome-tweaks
+          - lm-sensors
+          - htop
+          - virt-manager
+          - docker.io
+          - docker-compose
+          - lxc
+          - tree
+          - fzf
+          - ripgrep
+          - terminator
+          - imagemagick
+          - libnotify-bin
+          - direnv
+          - google-chrome-stable
+          - chrome-gnome-shell
+          - flatpak
+      become: yes
+
+    - name: Ensure necessary groups exists
+      ansible.builtin.group:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - docker
+        - libvirt
+        - libvirtd
+        - lxd
+      become: yes
+
+    - name: Add user to groups
+      ansible.builtin.user:
+        append: yes
+        name: thomas
+        groups:
+          - docker
+          - libvirt
+          - libvirtd
+          - lxd
+      become: yes
+
+    - name: Add Fuzzy Finder completions
+      ansible.builtin.lineinfile:
+        path: "{{ (ansible_env.HOME, '.bashrc') | path_join }}"
+        insertafter: EOF
+        line: source /usr/share/bash-completion/completions/fzf
+        state: present
+
+    - name: Add Fuzzy Finder key bindings
+      ansible.builtin.lineinfile:
+        path: "{{ (ansible_env.HOME, '.bashrc') | path_join }}"
+        insertafter: EOF
+        line: source /usr/share/doc/fzf/examples/key-bindings.bash
+        state: present
+
+    - name: Add direnv hook to .bashrc
+      ansible.builtin.lineinfile:
+        path: "{{ (ansible_env.HOME, '.bashrc') | path_join }}"
+        insertafter: EOF
+        line: eval "$(direnv hook bash)"
+        state: present
+
+    - name: Clean apt
+      ansible.builtin.apt:
+        autoremove: yes
+        autoclean: yes
+      become: yes
+
+
+    - name: Add the flathub flatpak repository remote to the system installation
+      community.general.flatpak_remote:
+        name: flathub
+        state: present
+        flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
+        method: system
+      become: yes
+
+    - name: Install multiple packages
+      community.general.flatpak:
+        state: present
+        method: system
+        name: "{{ item  }}" 
+      loop:
+        - com.jetbrains.IntelliJ-IDEA-Ultimate
+        - com.visualstudio.code
+        - com.getpostman.Postman
+        - org.gimp.GIMP
+        - org.inkscape.Inkscape
+        - org.blender.Blender
+        - net.lutris.Lutris
+        - com.usebottles.bottles
+        - org.kde.krita
+        - com.belmoussaoui.Authenticator
+      become: yes
+
+    - name: Install exercism CLI
+      block:
+        - name: Create exercism temp dir
+          ansible.builtin.tempfile:
+            state: directory
+          register: temp_path
+
+        - name: Retrieve and unarchive exercism
+          ansible.builtin.unarchive:
+            src: https://github.com/exercism/cli/releases/download/v3.1.0/exercism-3.1.0-linux-x86_64.tar.gz
+            remote_src: yes
+            dest: "{{ temp_path.path }}"
+
+        - name: Install exercism to /usr/local/bin
+          ansible.builtin.copy:
+            src: "{{ (temp_path.path, 'exercism') | path_join }}"
+            dest: /usr/local/bin/exercism
+            owner: root
+            group: root
+            mode: 0755
+          become: yes
+
+        - name: Delete exercism temp dir
+          ansible.builtin.file:
+            state: absent
+            path: "{{ temp_path.path }}"
+
+    - name: Install Kube Tools
+      block:
+        - name: Create kube temp dir
+          ansible.builtin.tempfile:
+            state: directory
+          register: temp_path
+          
+        - name: Get latest kubectl version
+          ansible.builtin.uri:
+            url: https://dl.k8s.io/release/stable.txt
+            return_content: yes
+          register: kubectl_version
+
+        - name: Download kubectl, kubectx, kubens, pinniped
+          ansible.builtin.uri:
+            url: "{{ item }}"
+            dest: "{{ temp_path.path }}"
+          with_items:
+            - https://raw.githubusercontent.com/ahmetb/kubectx/master/kubectx
+            - https://raw.githubusercontent.com/ahmetb/kubectx/master/kubens
+            - https://raw.githubusercontent.com/ahmetb/kubectx/master/completion/kubectx.bash
+            - https://raw.githubusercontent.com/ahmetb/kubectx/master/completion/kubens.bash
+            - https://get.pinniped.dev/v0.22.0/pinniped-cli-linux-amd64
+            - https://dl.k8s.io/release/{{ kubectl_version.content }}/bin/linux/amd64/kubectl
+            - https://dl.k8s.io/{{ kubectl_version.content }}/bin/linux/amd64/kubectl.sha256
+
+        - name: Validate the kubectl binary against the checksum file
+          ansible.builtin.shell:
+            cmd: echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+            chdir: "{{ temp_path.path }}"
+          register: result
+          failed_when: result.rc == 1
+
+        - name: Retrieve and unarchive k9s
+          ansible.builtin.unarchive:
+            src: https://github.com/derailed/k9s/releases/download/v0.27.3/k9s_Linux_amd64.tar.gz
+            remote_src: yes
+            dest: "{{ temp_path.path }}"
+
+        - name: install tools to /usr/local/bin
+          ansible.builtin.copy:
+            src: "{{ (temp_path.path, item.src) | path_join }}"
+            dest: "{{ ('/usr/local/bin/', item.dest) | path_join }}"
+            owner: root
+            group: root
+            mode: 0755
+          become: yes
+          with_items:
+            - { src: kubectl, dest: kubectl}
+            - { src: kubectx, dest: kubectx}
+            - { src: kubens, dest: kubens}
+            - { src: pinniped-cli-linux-amd64, dest: pinniped}
+            - { src: k9s, dest: k9s}
+
+        - name: Get completions path
+          ansible.builtin.command: pkg-config --variable=completionsdir bash-completion
+          register: completions_path
+
+        - name: Get kubectl completions
+          ansible.builtin.command: kubectl completion bash
+          register: kubectl_completion
+
+        - name: Add kubectl completions
+          ansible.builtin.copy:
+            content: "{{ kubectl_completion }}"
+            dest: "{{ (completions_path.stdout, 'kubectl') | path_join }}"
+            owner: root
+            group: root
+            mode: 0644
+          become: yes
+
+        - name: install kubectx and kubens completions
+          ansible.builtin.copy:
+            src: "{{ (temp_path.path, item.src) | path_join }}"
+            dest: "{{ (completions_path.stdout, item.dest) | path_join }}"
+            owner: root
+            group: root
+            mode: 0644
+          become: yes
+          with_items:
+            - { src: kubectx.bash, dest: kubectx}
+            - { src: kubens.bash, dest: kubens}
+
+        - name: Delete kube temp dir
+          ansible.builtin.file:
+            state: absent
+            path: "{{ temp_path.path }}"
+
+        

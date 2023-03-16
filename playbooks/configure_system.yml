@@ -1,0 +1,47 @@
+---
+- name: Configure System
+  hosts: localhost
+  connection: local
+
+  vars:
+    system_hostname: choucroute
+    system_timezone: Europe/Paris
+    system_locales:
+      - en_US.UTF-8
+      - fr_FR.UTF-8
+    extra_locale_settings:
+      LANG: en_US.UTF-8
+      LC_ADDRESS: fr_FR.UTF-8
+      LC_IDENTIFICATION: fr_FR.UTF-8
+      LC_MEASUREMENT: fr_FR.UTF-8
+      LC_MONETARY: fr_FR.UTF-8
+      LC_NAME: fr_FR.UTF-8
+      LC_NUMERIC: fr_FR.UTF-8
+      LC_PAPER: fr_FR.UTF-8
+      LC_TELEPHONE: fr_FR.UTF-8
+      LC_TIME: fr_FR.UTF-8
+
+  tasks:
+    - name: Gathering Facts
+      ansible.builtin.setup:
+
+    - name: Set hostname
+      ansible.builtin.hostname:
+        name: "{{ system_hostname }}"
+
+    - name: Set timezone
+      ansible.builtin.timezone:
+        name: "{{ system_timezone }}"
+
+    - name: Configure locales
+      ansible.builtin.locale_gen:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ system_locales }}"
+
+    - name: Set extra locale settings
+      ansible.builtin.command: localectl set-locale "{{ item.key }}={{ item.value }}"
+      loop: "{{ extra_locale_settings | dict2items }}"
+
+#TODO keyboard + gnome conf
+        

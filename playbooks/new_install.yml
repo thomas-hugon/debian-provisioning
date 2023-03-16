@@ -1,0 +1,6 @@
+---
+
+- import_playbook: gdrive_sync.yml
+- import_playbook: configure_system.yml
+- import_playbook: install_tools.yml
+- import_playbook: update_system.yml

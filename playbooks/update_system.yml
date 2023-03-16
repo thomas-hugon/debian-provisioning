@@ -1,0 +1,37 @@
+---
+- name: Update System
+  hosts: localhost
+  connection: local
+
+  tasks:
+    - name: Gathering Facts
+      ansible.builtin.setup:
+      
+    - name: Update package cache
+      ansible.builtin.apt:
+        update_cache: yes
+      become: yes
+
+    - name: Upgrade packages
+      ansible.builtin.apt:
+        upgrade: full
+        autoremove: yes
+        autoclean: yes
+      become: yes
+
+    - name: Upgrade dist
+      ansible.builtin.apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+      become: yes
+        
+    - name: Upgrade Flatpak packages
+      ansible.builtin.command: flatpak update --noninteractive
+      register: flatpak_cache_output
+      changed_when: "'Nothing to do.' not in flatpak_cache_output.stdout"
+      become: yes
+
+        
+        
+        
