@@ -105,6 +105,8 @@
         - com.usebottles.bottles
         - org.kde.krita
         - com.belmoussaoui.Authenticator
+        - com.bitwarden.desktop
+        - com.valvesoftware.Steam
       become: yes
 
     - name: Install exercism CLI
