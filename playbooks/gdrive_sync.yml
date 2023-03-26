@@ -39,7 +39,7 @@
       changed_when: "'There was nothing to transfer' not in result.stderr"
 
     - name: Update dotfiles
-      ansible.builtin.command: " {{ (ansible_env.HOME, '.dotfiles/dotfiles.sh') | path_join }}"
+      ansible.builtin.command: "sh {{ (ansible_env.HOME, '.dotfiles/dotfiles.sh') | path_join }}"
 
     - name: Create rclone-sync systemd timer
       ansible.builtin.copy:
